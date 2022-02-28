@@ -13,7 +13,9 @@ import (
 	"io"
 	"math/bits"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
@@ -49,6 +51,63 @@ func (sb *Sealer) NewSector(ctx context.Context, sector storage.SectorRef) error
 
 	return nil
 }
+
+//added by jack
+func GetFileInfo(src string) os.FileInfo {
+	if fileInfo, e := os.Stat(src); e != nil {
+		if os.IsNotExist(e) {
+			return nil
+		}
+		return nil
+	} else {
+		return fileInfo
+	}
+}
+
+func CopyFile(src, dst string) bool {
+	if len(src) == 0 || len(dst) == 0 {
+		return false
+	}
+	srcFile, e := os.OpenFile(src, os.O_RDONLY, os.ModePerm)
+	if e != nil {
+		log.Error("copyfile", e)
+		return false
+	}
+	defer func() {
+		srcFile.Close()
+	}()
+
+	dst = strings.Replace(dst, "\\", "/", -1)
+	dstPathArr := strings.Split(dst, "/")
+	dstPathArr = dstPathArr[0 : len(dstPathArr)-1]
+	dstPath := strings.Join(dstPathArr, "/")
+
+	dstFileInfo := GetFileInfo(dstPath)
+	if dstFileInfo == nil {
+		if e := os.MkdirAll(dstPath, os.ModePerm); e != nil {
+			log.Error("copyfile", e)
+			return false
+		}
+	}
+	dstFile, e := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
+	if e != nil {
+		log.Error("copyfile", e)
+		return false
+	}
+	defer dstFile.Close()
+	//fileInfo, e := srcFile.Stat()
+	//fileInfo.Size() > 1024
+	//byteBuffer := make([]byte, 10)
+	if _, e := io.Copy(dstFile, srcFile); e != nil {
+		log.Error("copyfile", e)
+		return false
+	} else {
+		return true
+	}
+
+}
+
+//ENDING
 
 func (sb *Sealer) AddPiece(ctx context.Context, sector storage.SectorRef, existingPieceSizes []abi.UnpaddedPieceSize, pieceSize abi.UnpaddedPieceSize, file storage.Data) (abi.PieceInfo, error) {
 	// TODO: allow tuning those:
@@ -96,7 +155,29 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector storage.SectorRef, existi
 		stagedFile, err = partialfile.CreatePartialFile(maxPieceSize, stagedPath.Unsealed)
 		if err != nil {
 			return abi.PieceInfo{}, xerrors.Errorf("creating unsealed sector file: %w", err)
+		} //added by jack
+		adpath, ok := os.LookupEnv("PRE_ADDPIECE_PATH")
+		if ok && adpath != "" {
+			log.Info("---------->load PRE_ADDPIECE_PATH OK")
+			data, err := os.ReadFile(filepath.Join(adpath, "unsealed/cid"))
+			if err == nil {
+				dcid, err := cid.Decode(string(data))
+				if err == nil {
+					ok := CopyFile(filepath.Join(adpath, "unsealed/s-t01000-0"), stagedPath.Unsealed)
+					if ok {
+						log.Info("---------->load addpiece from template ok")
+						return abi.PieceInfo{Size: pieceSize.Padded(), PieceCID: dcid}, nil
+					} else {
+						log.Warn("load addpiece unsealed template failed: ", err)
+					}
+				} else {
+					log.Warn("decode addpiece unsealed-cid template failed: ", err)
+				}
+			} else {
+				log.Warn("load addpiece unsealed-cid template failed: ", err)
+			}
 		}
+		//ENDING
 	} else {
 		stagedPath, done, err = sb.sectors.AcquireSector(ctx, sector, storiface.FTUnsealed, 0, storiface.PathSealing)
 		if err != nil {
@@ -197,9 +278,43 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector storage.SectorRef, existi
 	}
 	stagedFile = nil
 
-	if len(piecePromises) == 1 {
-		return piecePromises[0]()
+	//added by jack
+	gentemplate := func(pps abi.PieceInfo) {
+		adpath, ok := os.LookupEnv("PRE_ADDPIECE_PATH")
+		if ok && adpath != "" {
+			flag := true
+			dstFileInfo := GetFileInfo(filepath.Join(adpath, "unsealed/"))
+			if dstFileInfo == nil {
+				if e := os.MkdirAll(filepath.Join(adpath, "unsealed/"), os.ModePerm); e != nil {
+					log.Error("copyfile", e)
+					flag = false
+				}
+			}
+			if flag {
+				cidstr := pps.PieceCID.String()
+				err := os.WriteFile(filepath.Join(adpath, "unsealed/cid"), []byte(cidstr), os.ModePerm)
+				if err == nil {
+					ok := CopyFile(stagedPath.Unsealed, filepath.Join(adpath, "unsealed/s-t01000-0"))
+					if !ok {
+						log.Warn("generage addpiece unsealed template failed: ", err)
+					}
+				} else {
+					log.Warn("generage addpiece unsealed-cid template failed: ", err)
+				}
+			}
+		}
 	}
+	if len(piecePromises) == 1 {
+		pps, err := piecePromises[0]()
+		gentemplate(pps)
+
+		return pps, err
+	}
+
+	/*if len(piecePromises) == 1 {
+		return piecePromises[0]()
+	}*/
+	//ENDING
 
 	var payloadRoundedBytes abi.PaddedPieceSize
 	pieceCids := make([]abi.PieceInfo, len(piecePromises))
@@ -232,10 +347,19 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector storage.SectorRef, existi
 		pieceCID = paddedCid
 	}
 
-	return abi.PieceInfo{
+	//added by jack
+
+	/*	return abi.PieceInfo{
 		Size:     pieceSize.Padded(),
 		PieceCID: pieceCID,
-	}, nil
+	}, nil*/
+	pps := abi.PieceInfo{
+		Size:     pieceSize.Padded(),
+		PieceCID: pieceCID,
+	}
+	gentemplate(pps)
+	return pps, nil
+	//ENDING
 }
 
 func (sb *Sealer) pieceCid(spt abi.RegisteredSealProof, in []byte) (cid.Cid, error) {
