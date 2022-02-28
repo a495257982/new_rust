@@ -73,6 +73,12 @@ func GetLocalIp() string {
 	return Path
 }
 
+func GetProName() string {
+	Path := os.Getenv("P_NAME")
+	log.Info("这个进程 进程名是 %s", Path)
+	return Path
+}
+
 func newLocalWorker(executor ExecutorFunc, wcfg WorkerConfig, envLookup EnvFunc, store stores.Store, local *stores.Local, sindex stores.SectorIndex, ret storiface.WorkerReturn, cst *statestore.StateStore) *LocalWorker {
 	acceptTasks := map[sealtasks.TaskType]struct{}{}
 	for _, taskType := range wcfg.TaskTypes {
@@ -616,6 +622,8 @@ func (l *LocalWorker) Info(context.Context) (storiface.WorkerInfo, error) {
 	if err != nil {
 		panic(err)
 	}
+
+	hostname = hostname + GetProName()
 
 	gpus, err := ffi.GetGPUDevices()
 	if err != nil {
