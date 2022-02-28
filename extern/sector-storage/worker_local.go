@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"sync"
@@ -85,6 +87,19 @@ func newLocalWorker(executor ExecutorFunc, wcfg WorkerConfig, envLookup EnvFunc,
 		acceptTasks[taskType] = struct{}{}
 	}
 
+	//added by jack
+
+	repoPath := os.Getenv("IDPATH")
+
+	sessionid := ""
+	date, err := ioutil.ReadFile(filepath.Join(repoPath, "workerid"))
+	if err == nil {
+		sessionid = string(date)
+	} else {
+		sessionid = uuid.New().String()
+		ioutil.WriteFile(filepath.Join(repoPath, "workerid"), []byte(sessionid), 0666)
+	}
+
 	w := &LocalWorker{
 		storage:    store,
 		localStore: local,
@@ -99,7 +114,7 @@ func newLocalWorker(executor ExecutorFunc, wcfg WorkerConfig, envLookup EnvFunc,
 		noSwap:          wcfg.NoSwap,
 		envLookup:       envLookup,
 		ignoreResources: wcfg.IgnoreResourceFiltering,
-		session:         uuid.New(),
+		session:         uuid.MustParse(sessionid),
 		closing:         make(chan struct{}),
 	}
 
