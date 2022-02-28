@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/filecoin-project/lotus/extern/sector-storage/storiface"
+	"github.com/mitchellh/go-homedir"
 	"os"
+	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -68,6 +72,14 @@ var sectorsCmd = &cli.Command{
 var sectorsPledgeCmd = &cli.Command{
 	Name:  "pledge",
 	Usage: "store random data in a sector",
+
+	// added by jack
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "workerid",
+			Value: "",
+		},
+	},
 	Action: func(cctx *cli.Context) error {
 		nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
 		if err != nil {
@@ -80,9 +92,32 @@ var sectorsPledgeCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
-
-		fmt.Println("Created CC sector: ", id.Number)
-
+		workerid := cctx.String("workerid")
+		log.Infof("------------------probe used as detect preallocated task to workerid!, workerid=%s", workerid)
+		if workerid != "" {
+			if homedir, err := homedir.Expand("~"); err == nil {
+				for i := 0; i < 2; i++ {
+					_, err := os.Stat(filepath.Join(homedir, "./FixedSectorWorkerId"))
+					notexist := os.IsNotExist(err)
+					if notexist {
+						err = os.MkdirAll(filepath.Join(homedir, "./FixedSectorWorkerId"), 0755)
+						if err == nil {
+							break
+						}
+						err := os.WriteFile(path.Join(homedir, "./FixedSectorWorkerId", storiface.SectorName(id)+"cfg"), []byte(workerid), 0666)
+						if err == nil {
+							break
+						}
+					} else {
+						err := os.WriteFile(path.Join(homedir, "./FixedSectorWorkerId", storiface.SectorName(id)+".cfg"), []byte(workerid), 0666)
+						if err == nil {
+							break
+						}
+					}
+				}
+			}
+		}
+		//ENDING
 		return nil
 	},
 }

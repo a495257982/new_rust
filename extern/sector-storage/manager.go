@@ -53,6 +53,8 @@ type SectorManager interface {
 
 var ClosedWorkerID = uuid.UUID{}
 
+type WorkerID uuid.UUID // worker session UUID
+
 type Manager struct {
 	ls         stores.LocalStorage
 	storage    *stores.Remote
