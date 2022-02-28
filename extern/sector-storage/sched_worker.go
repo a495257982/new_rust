@@ -50,7 +50,7 @@ func (sh *scheduler) runWorker(ctx context.Context, w Worker) error {
 		closingMgr: make(chan struct{}),
 		closedMgr:  make(chan struct{}),
 	}
-
+	//added by pan
 	wid := storiface.WorkerID(sessID)
 
 	sh.workersLk.Lock()
@@ -62,6 +62,16 @@ func (sh *scheduler) runWorker(ctx context.Context, w Worker) error {
 		sh.workersLk.Unlock()
 		return nil
 	}
+
+	//added by jack
+	if info.Ipstr != "" {
+		sh.fixedLK.Lock()
+		sh.workersip[WorkerID(sessID)] = info.Ipstr
+		sh.fixedLK.Unlock()
+	} else {
+		//log.Info("这个worker启动的时候IP是空的，所以没办法加入workerip列表")
+	}
+	//EDNING
 
 	sh.workers[wid] = worker
 	sh.workersLk.Unlock()

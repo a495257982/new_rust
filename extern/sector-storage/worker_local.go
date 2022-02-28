@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"reflect"
 	"runtime"
 	"sync"
@@ -64,6 +65,12 @@ type LocalWorker struct {
 	session     uuid.UUID
 	testDisable int64
 	closing     chan struct{}
+}
+
+func GetLocalIp() string {
+	Path := os.Getenv("W_PLAN")
+	log.Info("这个进程的组 is %s", Path)
+	return Path
 }
 
 func newLocalWorker(executor ExecutorFunc, wcfg WorkerConfig, envLookup EnvFunc, store stores.Store, local *stores.Local, sindex stores.SectorIndex, ret storiface.WorkerReturn, cst *statestore.StateStore) *LocalWorker {
@@ -628,7 +635,10 @@ func (l *LocalWorker) Info(context.Context) (storiface.WorkerInfo, error) {
 	}
 
 	return storiface.WorkerInfo{
-		Hostname:        hostname,
+		Hostname: hostname,
+		//added by jack
+		Ipstr: GetLocalIp(),
+		//ENDING
 		IgnoreResources: l.ignoreResources,
 		Resources: storiface.WorkerResources{
 			MemPhysical: memPhysical,
@@ -694,3 +704,32 @@ func (w *wctx) Value(key interface{}) interface{} {
 var _ context.Context = &wctx{}
 
 var _ Worker = &LocalWorker{}
+
+//added by pan
+func (l *LocalWorker) MoveToNfsStorage(ctx context.Context, sector abi.SectorID) bool {
+
+	a := sector.Number
+	b := sector.Miner
+	Path := os.Getenv("MOVEPATH")
+	MinerPath := os.Getenv("LOTUS_WORKER_PP")
+
+	movecache := "mv " + MinerPath + "/cache/s-t0" + b.String() + "-" + a.String() + "   " + Path + "/cache"
+	log.Info(movecache)
+	movesealed := "mv " + MinerPath + "/sealed/s-t0" + b.String() + "-" + a.String() + "  " + Path + "/sealed"
+	log.Info(movesealed)
+	mvcache := exec.Command("bash", "-c", movecache)
+	mvsealed := exec.Command("bash", "-c", movesealed)
+	var err error
+	var output []byte
+	if output, err = mvcache.CombinedOutput(); err != nil {
+		log.Info("没有移动成功", err)
+	}
+	_ = string(output)
+	var output1 []byte
+	if output1, _ = mvsealed.CombinedOutput(); err != nil {
+	}
+	_ = string(output1)
+	return true
+}
+
+/*ENDING*/

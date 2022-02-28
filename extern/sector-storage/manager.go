@@ -1,10 +1,15 @@
 package sectorstorage
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -562,7 +567,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector storage.SectorRef, 
 		return err
 	}
 
-	fetchSel := newAllocSelector(m.index, storiface.FTCache|storiface.FTSealed, storiface.PathStorage)
+	/*fetchSel := newAllocSelector(m.index, storiface.FTCache|storiface.FTSealed, storiface.PathStorage)
 	moveUnsealed := unsealed
 	{
 		if len(keepUnsealed) == 0 {
@@ -579,9 +584,104 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector storage.SectorRef, 
 	if err != nil {
 		return xerrors.Errorf("moving sector to storage: %w", err)
 	}
+	*/
 
+	//added by pan
+	_, _, err = m.storage.AcquireSector(ctx, sector, 0, 2, "storage", "aaa")
+	if err != nil {
+		return xerrors.Errorf("Acquire sealed sector err : %w", err)
+	}
+
+	_, _, err = m.storage.AcquireSector(ctx, sector, 0, 4, "storage", "aaa")
+	if err != nil {
+		return xerrors.Errorf("Acquire cache sector err : %w", err)
+	}
+
+	si, err := m.index.StorageFindSector(ctx, sector.ID, storiface.FTSealed, 0, false)
+	if len(si) != 0 {
+		for _, info := range si {
+			for _, url := range info.URLs {
+				if len(url) != 0 {
+					//log.Info("pprinturl__", url)
+					a := strings.Index(url, "/remote")
+					l1 := url[:a]
+					l2 := l1 + "/rpc/v0"
+					//log.Info("gaizaohou__", l2)
+					cha := FetchToNfsStorage(sector, l2)
+					if !cha {
+						//log.Info("移动扇区失败，需要手动移动：%w", sector.ID.Number)
+						return nil
+					}
+					var Pathid string
+					Pathid = os.Getenv("PATHID")
+					if Pathid == "" {
+						//log.Info("获取 storage id 失败 ")
+						return nil
+					}
+					err := m.index.StorageDeclareSector(ctx, stores.ID(Pathid), sector.ID, 2, true)
+					if err != nil {
+						//log.Info("声明 sector失败")
+						return nil
+					}
+					err1 := m.index.StorageDeclareSector(ctx, stores.ID(Pathid), sector.ID, 4, true)
+					if err1 != nil {
+						//log.Info("声明 sector失败")
+						return nil
+					}
+				} else {
+					//log.Info("url为空")
+				}
+			}
+			//log.Info("sectors ", sector.ID.Number, "声明成功")
+		}
+	} else {
+		//log.Info("si 为空")
+	}
 	return nil
 }
+
+func FetchToNfsStorage(sector storage.SectorRef, URL string) bool {
+
+	mapInstance := make(map[string]interface{})
+	mapInstance["jsonrpc"] = "2.0"
+	mapInstance["method"] = "Filecoin.MoveToNfsStorage"
+	mapInstance["params"] = []map[string]interface{}{{"Miner": sector.ID.Miner, "Number": sector.ID.Number}}
+	mapInstance["id"] = 1
+	jsonStr, err := json.Marshal(mapInstance)
+	if err != nil {
+		return false
+	}
+	reader := bytes.NewReader(jsonStr)
+
+	// Create a Bearer string by appending string access token
+	workerstoken := os.Getenv("WORKERSTOKEN")
+	if workerstoken == "" {
+		//log.Info("获取WORKERSTOKEN 失败，查看环境变量是否定义")
+		return false
+	}
+	var bearer = "Bearer " + workerstoken
+	// Create a new request using http
+	req, err := http.NewRequest("POST", URL, reader)
+
+	// add authorization header to the req
+	req.Header.Add("Authorization", bearer)
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send req using http Client
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	_, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+	return true
+}
+
+//ENDING
 
 func (m *Manager) FinalizeReplicaUpdate(ctx context.Context, sector storage.SectorRef, keepUnsealed []storage.Range) error {
 	ctx, cancel := context.WithCancel(ctx)

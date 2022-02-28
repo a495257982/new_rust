@@ -915,6 +915,9 @@ type WorkerStruct struct {
 		Version func(p0 context.Context) (Version, error) `perm:"admin"`
 
 		WaitQuiet func(p0 context.Context) error `perm:"admin"`
+		//added by pan
+		MoveToNfsStorage          func(ctx context.Context, sector abi.SectorID)  bool     `perm:"admin"`
+		/*ENDING*/
 	}
 }
 
@@ -4788,6 +4791,12 @@ func (s *StorageMinerStruct) StorageLock(p0 context.Context, p1 abi.SectorID, p2
 	}
 	return s.Internal.StorageLock(p0, p1, p2, p3)
 }
+
+//added by pan
+func (w *WorkerStruct) MoveToNfsStorage(ctx context.Context, sector abi.SectorID) bool {
+	return w.Internal.MoveToNfsStorage(ctx,sector)
+}
+/*ENDING*/
 
 func (s *StorageMinerStub) StorageLock(p0 context.Context, p1 abi.SectorID, p2 storiface.SectorFileType, p3 storiface.SectorFileType) error {
 	return ErrNotSupported
